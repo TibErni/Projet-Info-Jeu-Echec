@@ -54,9 +54,9 @@ void print_board(const Board board) {
             if (board[x][y] == EMPTY) {
                 printf(" . ");
             } else if (board[x][y] == PLAYER1) {
-                printf(" 1 ");
+                printf(" ▼ ");
             } else if (board[x][y] == PLAYER2) {
-                printf(" 2 ");
+                printf(" ▲ ");
             }
             printf("%s", ANSI_RESET);
         }
