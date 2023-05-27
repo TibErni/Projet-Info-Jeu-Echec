@@ -1,0 +1,619 @@
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define PLAYER1_IS_AI true
+#define PLAYER2_IS_AI false
+#define MAX_INPUT_LENGTH 50
+#define BOARD_SIZE 8
+
+typedef enum {
+  EMPTY,
+  PLAYER1,
+  PLAYER2,
+  PLAYER1_PROMOTED,
+  PLAYER2_PROMOTED,
+} Piece;
+
+typedef Piece Board[BOARD_SIZE][BOARD_SIZE];
+
+void initialize_board(Board board, Piece player1_promoted,
+                      Piece player2_promoted) {
+  for (int i = 0; i < BOARD_SIZE; i++) {
+    for (int j = 0; j < BOARD_SIZE; j++) {
+      if (i == 0) {
+        if (j == player1_promoted) {
+          board[i][j] = PLAYER1_PROMOTED;
+        } else {
+          board[i][j] = PLAYER1;
+        }
+      } else if (i == BOARD_SIZE - 1) {
+        if (j == player2_promoted) {
+          board[i][j] = PLAYER2_PROMOTED;
+        } else {
+          board[i][j] = PLAYER2;
+        }
+      } else {
+        board[i][j] = EMPTY;
+      }
+    }
+  }
+}
+
+// codes ANSI pour le texte noir et les couleurs d'arrière-plan
+const char *ANSI_COLORS[] = {
+    "\x1b[30m",  // Noir
+    "\x1b[41m",  // Fond Rouge
+    "\x1b[42m",  // Fond Vert
+    "\x1b[43m",  // Fond Jaune
+    "\x1b[44m",  // Fond Bleu
+    "\x1b[45m",  // Fond Magenta
+    "\x1b[46m",  // Fond Cyan
+    "\x1b[47m",  // Fond Blanc
+    "\x1b[100m", // Fond Gris
+    "\x1b[101m", // Fond Rouge Clair
+};
+
+const int NUM_COLORS = sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]);
+
+const char *ANSI_RESET = "\x1b[0m";
+
+int get_color_index(int x, int y) { return (x + y) % NUM_COLORS; }
+
+void print_board(const Board board) {
+  for (int x = 0; x < BOARD_SIZE; x++) {
+    for (int y = 0; y < BOARD_SIZE; y++) {
+      int color_index = get_color_index(x, y);
+      printf("%s", ANSI_COLORS[color_index]);
+
+      if (board[x][y] == EMPTY) {
+        printf("   ");
+      } else if (board[x][y] == PLAYER1) {
+        printf(" ▼ ");
+      } else if (board[x][y] == PLAYER2) {
+        printf(" ▲ ");
+      } else if (board[x][y] == PLAYER1_PROMOTED) { // Pièce promue du Joueur 1
+        printf("[▼]");
+      } else if (board[x][y] == PLAYER2_PROMOTED) { // Pièce promue du Joueur 2
+        printf("[▲]");
+      }
+      printf("%s", ANSI_RESET);
+    }
+    printf("\n");
+  }
+}
+
+bool is_inside_board(int x, int y) {
+  return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
+}
+
+bool is_piece_on_path(const Board board, int x_start, int y_start, int x_end,
+                      int y_end) {
+  int dx = x_end - x_start;
+  int dy = y_end - y_start;
+  int x_step = (dx != 0) ? (dx > 0 ? 1 : -1) : 0;
+  int y_step = (dy != 0) ? (dy > 0 ? 1 : -1) : 0;
+  int x, y;
+
+  for (x = x_start + x_step, y = y_start + y_step; x != x_end || y != y_end;
+       x += x_step, y += y_step) {
+    if (board[x][y] != EMPTY) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool is_valid_move(const Board board, Piece current_player, int x_start,
+                   int y_start, int x_end, int y_end) {
+  int dx = x_end - x_start;
+  int dy = y_end - y_start;
+  Piece start_piece = board[x_start][y_start];
+
+  if (!is_inside_board(x_end,
+                       y_end)) { //  faux si coup en dehors du terrain de jeu
+    return false;
+  }
+
+  if (start_piece != current_player && start_piece != current_player + 2 ||
+      board[x_end][y_end] !=
+          EMPTY) { // faux si la case est déjà occupé ou non vide
+    return false;
+  }
+
+  if (start_piece == current_player) {
+    if (current_player ==
+        PLAYER1) { // vérifie que le joueur 1 fais un coup en diagonal correct,
+                   // ou un coup sur la largeur ou sur la longeur
+      if (!((dx == 1 && abs(dy) == dx) || (dx == 1 && dy == 0) ||
+            (dx == 0 && abs(dy) == 1))) {
+        return false;
+      }
+    } else if (current_player ==
+               PLAYER2) { // vérifie que le joueur 2 fais un coup en diagonal
+                          // correct, ou un coup sur la largeur ou sur la
+                          // longeur
+      if (!((dx == -1 && abs(dy) == dx) || (dx == -1 && dy == 0) ||
+            (dx == 0 && abs(dy) == 1))) {
+        return false;
+      }
+    }
+  } else if (start_piece == current_player + 2) {
+    if (!(abs(dx) <= 1 && abs(dy) <= 1)) {
+      return false;
+    }
+  }
+
+  if (is_piece_on_path(board, x_start, y_start, x_end, y_end)) {
+    return false;
+  }
+
+  return true;
+}
+
+int move_piece(Board board, Piece player, int x_start, int y_start, int x_end, int y_end) {
+  Piece start_piece = board[x_start][y_start];
+  Piece end_piece = board[x_end][y_end];
+
+  if (start_piece != player && start_piece != player + 2) {
+    return 0; // La pièce de départ n'appartient pas au joueur actuel
+  }
+
+  if (!(board[x_end][y_end] == EMPTY || (start_piece == player + 2 && end_piece == 3 - player && end_piece != player + 4 && end_piece != 3 - player + 2))) {
+    return 0; // faux si la case est déjà occupée ou non vide
+  }
+
+
+  int dx = x_end - x_start;
+  int dy = y_end - y_start;
+
+  if (start_piece == player && is_piece_on_path(board, x_start, y_start, x_end, y_end)) {
+    return 0; // Il y a une pièce sur le chemin pour les pions non promus
+  }
+
+  // Vérifiez si la pièce est promue et pousse une pièce adverse qui n'est pas promue
+  if (start_piece == player + 2 && end_piece == 3 - player && end_piece != player + 4 && end_piece != 3 - player + 2) {
+    // Calculer la position à laquelle la pièce repoussée doit se déplacer
+    int x_push = x_end + (dx == 0 ? 0 : (dx > 0 ? 1 : -1));
+    int y_push = y_end + (dy == 0 ? 0 : (dy > 0 ? 1 : -1));
+
+    // Vérifiez si la pièce peut être poussée
+    if (is_inside_board(x_push, y_push) && board[x_push][y_push] == EMPTY) {
+      board[x_push][y_push] = end_piece;
+      board[x_end][y_end] = start_piece;
+      board[x_start][y_start] = EMPTY;
+      return 1;
+    } else {
+      return 0; // Mouvement invalide si la pièce ne peut pas être poussée
+    }
+  }
+
+  if (start_piece == player) {
+    // Mouvement d'une pièce normale
+    if ((player == PLAYER1 && dx >= 0) || (player == PLAYER2 && dx <= 0)) {
+      if (dx == 0 || dy == 0 || abs(dx) == abs(dy)) {
+        board[x_end][y_end] = player;
+        board[x_start][y_start] = EMPTY;
+        return 1;
+      }
+    }
+  } else if (start_piece == player + 2) {
+    // La pièce est promue
+    if ((player == PLAYER1 && dx >= 0) || (player == PLAYER2 && dx <= 0)) {
+      if ((dx == 0 || dy == 0 || abs(dx) == abs(dy)) && abs(dx) <= 5 && abs(dy) <= 5) {
+        // Si la pièce de fin est une pièce ennemie promue, la pièce promue ne peut pas la pousser
+        if (end_piece == 3 - player + 2) {
+          return 0;
+        }
+        // Déplace la pièce promue normalement
+        board[x_end][y_end] = player + 2;
+        board[x_start][y_start] = EMPTY;
+        return 1;
+      }
+    }
+  }
+
+  return 0; // Le mouvement est invalide
+}
+
+
+bool has_valid_move(const Board board, Piece player) {
+  for (int x = 0; x < BOARD_SIZE; x++) {
+    for (int y = 0; y < BOARD_SIZE; y++) {
+      // Si la pièce appartient au joueur actuel
+      if (board[x][y] == player || board[x][y] == player + 2) {
+        // Essayez tous les mouvements possibles pour cette pièce
+        for (int dx = -1; dx <= 1; dx++) {
+          for (int dy = -1; dy <= 1; dy++) {
+            if (dx == 0 && dy == 0)
+              continue;
+            int x_end = x + dx;
+            int y_end = y + dy;
+            // Si le mouvement est valide, le joueur peut bouger
+            if (is_valid_move(board, player, x, y, x_end, y_end)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  // Si aucun mouvement valide n'est trouvé, le joueur ne peut pas bouger
+  return false;
+}
+
+void get_best_move_level1(const Board board, Piece player, int *x_start,
+                          int *y_start, int *x_end, int *y_end) {
+  int winning_x_start = -1;
+  int winning_y_start = -1;
+  int winning_x_end = -1;
+  int winning_y_end = -1;
+
+  for (int i = 0; i < BOARD_SIZE; i++) {
+    for (int j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] != player)
+        continue;
+
+      for (int di = -1; di <= 1; di++) {
+        for (int dj = -1; dj <= 1; dj++) {
+          int new_i = i;
+          int new_j = j;
+
+          // Determine how far we can move in this direction
+          while (new_i + di >= 0 && new_i + di < BOARD_SIZE &&
+                 new_j + dj >= 0 && new_j + dj < BOARD_SIZE &&
+                 board[new_i + di][new_j + dj] == EMPTY) {
+            new_i += di;
+            new_j += dj;
+          }
+
+          // If the move results in winning the game, record it
+          if (new_i == BOARD_SIZE - 1 && new_i != i) {
+            winning_x_start = i;
+            winning_y_start = j;
+            winning_x_end = new_i;
+            winning_y_end = new_j;
+          }
+        }
+      }
+    }
+  }
+
+  // If a winning move was found, perform it
+  if (winning_x_start != -1) {
+    *x_start = winning_x_start;
+    *y_start = winning_y_start;
+    *x_end = winning_x_end;
+    *y_end = winning_y_end;
+  }
+  // Otherwise, select a random valid move
+  else {
+    while (1) {
+      *x_start = rand() % BOARD_SIZE;
+      *y_start = rand() % BOARD_SIZE;
+      *x_end = *x_start + (rand() % 3 - 1);
+      *y_end = *y_start + (rand() % 3 - 1);
+
+      if (*x_end >= 0 && *x_end < BOARD_SIZE && *y_end >= 0 &&
+          *y_end < BOARD_SIZE && board[*x_end][*y_end] == EMPTY &&
+          is_valid_move(board, player, *x_start, *y_start, *x_end, *y_end)) {
+        break;
+      }
+    }
+  }
+}
+
+void ia_move(Board board, Piece player) {
+  while (1) {
+    int x_start = rand() % BOARD_SIZE;
+    int y_start = rand() % BOARD_SIZE;
+    int x_end = rand() % BOARD_SIZE;
+    int y_end = rand() % BOARD_SIZE;
+
+    if (move_piece(board, player, x_start, y_start, x_end, y_end)) {
+      printf("IA a déplacé une pièce de (%d, %d) à (%d, %d).\n", x_start,
+             y_start, x_end, y_end);
+      break;
+    }
+  }
+}
+
+void get_best_move_level2(Board board, Piece player, int *x_start, int *y_start,
+                          int *x_end, int *y_end) {
+  int best_score = -1;
+  int winning_x_start = -1;
+  int winning_y_start = -1;
+  int winning_x_end = -1;
+  int winning_y_end = -1;
+
+  for (int i = 0; i < BOARD_SIZE; i++) {
+    for (int j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] != player)
+        continue;
+
+      for (int di = -1; di <= 1; di++) {
+        for (int dj = -1; dj <= 1; dj++) {
+          int new_i = i;
+          int new_j = j;
+          int steps = 0;
+
+          // Determine how far we can move in this direction
+          while (new_i + di >= 0 && new_i + di < BOARD_SIZE &&
+                 new_j + dj >= 0 && new_j + dj < BOARD_SIZE &&
+                 board[new_i + di][new_j + dj] == EMPTY) {
+            new_i += di;
+            new_j += dj;
+            steps++;
+
+            // If the move results in winning the game, record it
+            if (new_i == BOARD_SIZE - 1) {
+              winning_x_start = i;
+              winning_y_start = j;
+              winning_x_end = new_i;
+              winning_y_end = new_j;
+              break;
+            }
+
+            // If we've moved 4 steps and this is not a winning move, break
+            if (steps == 4) {
+              break;
+            }
+          }
+
+          int score =
+              new_i; // Higher score for moving towards the end of the board
+          if (new_j > 0 && new_j < BOARD_SIZE - 1)
+            score++; // Higher score for staying in the middle of the board
+
+          if (score > best_score) {
+            best_score = score;
+            *x_start = i;
+            *y_start = j;
+            *x_end = new_i;
+            *y_end = new_j;
+          }
+        }
+      }
+    }
+  }
+
+  // If a winning move was found, perform it
+  if (winning_x_start != -1) {
+    *x_start = winning_x_start;
+    *y_start = winning_y_start;
+    *x_end = winning_x_end;
+    *y_end = winning_y_end;
+  }
+}
+
+void get_best_move_level3(Board board, Piece player, int *x_start, int *y_start,
+                          int *x_end, int *y_end) {
+  int best_distance = -1;
+  int distance;
+
+  for (int i = 0; i < BOARD_SIZE; i++) {
+    for (int j = 0; j < BOARD_SIZE; j++) {
+      if (board[i][j] != player)
+        continue;
+
+      for (int di = -1; di <= 1; di++) {
+        for (int dj = -1; dj <= 1; dj++) {
+          int new_i = i;
+          int new_j = j;
+
+          // Continue moving in this direction until we hit a non-empty square
+          // or the edge of the board
+          while (1) {
+            new_i += di;
+            new_j += dj;
+            if (new_i < 0 || new_i >= BOARD_SIZE || new_j < 0 ||
+                new_j >= BOARD_SIZE || board[new_i][new_j] != EMPTY) {
+              new_i -= di; // Step back to the last valid position
+              new_j -= dj;
+              break;
+            }
+          }
+
+          distance = abs(new_i - i); // How far did we move in the x-direction?
+                                     // (Assuming the board is square)
+          if (distance > best_distance ||
+              new_i == BOARD_SIZE -
+                           1) { // Check if the move allows us to win the game
+            best_distance = distance;
+            *x_start = i;
+            *y_start = j;
+            *x_end = new_i;
+            *y_end = new_j;
+          }
+        }
+      }
+    }
+  }
+}
+
+int main() {
+  srand(time(NULL));
+  Board board;
+
+  int num_rounds;
+  int player1_promoted = -1;
+  int player2_promoted = -1;
+  int player1_score = 0;
+  int player2_score = 0;
+
+  char input[MAX_INPUT_LENGTH];
+  int num_read;
+  int play_with_ia; // Ajout de cette variable pour stocker le choix de
+                    // l'utilisateur de jouer avec l'IA ou non.
+
+  // Validation du nombre de manches à jouer
+  char *end;
+  do {
+    printf("Entrez le nombre de manches à jouer : ");
+    fgets(input, sizeof(input), stdin);
+    num_rounds = strtol(input, &end, 10);
+    while (isspace((unsigned char)*end))
+      end++;
+  } while (*end != '\0' || num_rounds <= 0);
+
+  // Ajout du code pour demander à l'utilisateur s'il veut jouer avec l'IA ou
+  // non.
+  do {
+    printf("Voulez-vous jouer avec l'IA ? (1 pour Oui, 0 pour Non) ");
+    fgets(input, sizeof(input), stdin);
+    play_with_ia = strtol(input, &end, 10);
+    while (isspace((unsigned char)*end))
+      end++;
+  } while (*end != '\0' || (play_with_ia != 0 && play_with_ia != 1));
+
+  int ia_level; // Ajoutez cette variable en haut du main()
+
+  // Ajoutez ce code après avoir demandé à l'utilisateur s'il veut jouer avec
+  // l'IA
+  if (play_with_ia) {
+    do {
+      printf("Choisissez le niveau de l'IA (1 pour niveau 1, 2 pour niveau 2, "
+             "3 pour niveau 3) : ");
+      fgets(input, sizeof(input), stdin);
+      ia_level = strtol(input, &end, 10);
+      while (isspace((unsigned char)*end))
+        end++;
+    } while (*end != '\0' || (ia_level != 1 && ia_level != 2 && ia_level != 3));
+  }
+
+  bool game_over = false;
+
+  time_t start_time, end_time;
+  double player1_total_time = 0, player2_total_time = 0;
+
+  for (int i = 0; i < num_rounds && !game_over; i++) {
+  initialize_board(board, player1_promoted, player2_promoted);
+  printf("Début de la manche %d:\n", i + 1);
+  print_board(board);
+
+  Piece current_player = PLAYER1;
+
+  while (1) {
+    int x_start, y_start, x_end, y_end;
+    double elapsed_time;
+    time_t start_time, end_time;
+
+    if ((play_with_ia && current_player == PLAYER1) ||
+        (current_player == PLAYER2 && PLAYER2_IS_AI)) {
+      start_time = time(NULL);
+      if (ia_level == 1) {
+        get_best_move_level1(board, current_player, &x_start, &y_start,
+                             &x_end, &y_end);
+      } else if (ia_level == 2) {
+        get_best_move_level2(board, current_player, &x_start, &y_start,
+                             &x_end, &y_end);
+      } else { // ia_level == 3
+        get_best_move_level3(board, current_player, &x_start, &y_start,
+                             &x_end, &y_end);
+      }
+      end_time = time(NULL);
+      elapsed_time = difftime(end_time, start_time);
+      printf("IA (joueur %d) a décidé de son mouvement.\n", current_player);
+    } else {
+      printf("Joueur %d, entrez les coordonnées de départ et d'arrivée "
+             "(x_start y_start x_end y_end) ou -1 pour quitter: ",
+             current_player);
+      start_time = time(NULL);
+      if (fgets(input, MAX_INPUT_LENGTH, stdin) == NULL ||
+          strlen(input) >= MAX_INPUT_LENGTH - 1) {
+        printf("Erreur d'entrée. Essayez encore.\n");
+        continue;
+      }
+      end_time = time(NULL);
+      num_read = sscanf(input, "%d %d %d %d", &x_start, &y_start, &x_end, &y_end);
+
+      // Vérifier si l'utilisateur veut quitter le jeu
+      if (num_read >= 1 && x_start == -1) {
+        printf("Joueur %d a quitté le jeu.\n", current_player);
+        game_over = true; // Flag pour terminer le jeu
+        break;
+      }
+
+      // Sinon, vérifiez si l'utilisateur a entré quatre nombres
+      if (num_read != 4) {
+        printf("Entrée non valide. Quatre nombres entiers sont requis.\n");
+        continue;
+      }
+    }
+
+    elapsed_time = difftime(end_time, start_time);
+    printf("Le joueur %d a pris %.2f secondes pour effectuer ce mouvement.\n",
+           current_player, elapsed_time);
+
+    if (current_player == PLAYER1) {
+      player1_total_time += elapsed_time;
+    } else {
+      player2_total_time += elapsed_time;
+    }
+
+    if (move_piece(board, current_player, x_start, y_start, x_end, y_end)) {
+      printf("Mouvement effectué.\n");
+      print_board(board);
+
+      // reste du code ...
+
+
+
+        if (current_player == PLAYER1 && x_end == BOARD_SIZE - 1) {
+          printf("Le joueur 1 a atteint le côté opposé du plateau !\n");
+          player1_promoted = y_end;
+          player1_score += (board[x_end][y_end] == PLAYER1_PROMOTED) ? 2 : 1;
+          break;
+        } else if (current_player == PLAYER2 && x_end == 0) {
+          printf("Le joueur 2 a atteint le côté opposé du plateau !\n");
+          player2_promoted = y_end;
+          player2_score += (board[x_end][y_end] == PLAYER2_PROMOTED) ? 2 : 1;
+          break;
+        }
+
+        current_player = (current_player == PLAYER1) ? PLAYER2 : PLAYER1;
+      } else {
+        printf("Mouvement invalide. Réessayez.\n");
+      }
+
+      if (!has_valid_move(board, PLAYER1) && !has_valid_move(board, PLAYER2)) {
+        printf("Aucun mouvement possible pour les deux joueurs. Le dernier "
+               "joueur ayant bougé remporte la manche !\n");
+        if (current_player == PLAYER1) {
+          player1_score += 1;
+        } else {
+          player2_score += 1;
+        }
+        break;
+      }
+    }
+
+    printf("Le score actuel est : Joueur 1 - %d, Joueur 2 - %d\n",
+           player1_score, player2_score);
+    printf("Le temps total passé jusqu'à présent est : Joueur 1 - %.2f "
+           "secondes, Joueur 2 - %.2f secondes\n",
+           player1_total_time, player2_total_time);
+
+    if (i == num_rounds - 1) { // S'il s'agit de la dernière manche
+      if (player1_score > player2_score) {
+        printf("Le joueur 1 remporte la partie !\n");
+        game_over = true; // Fin du jeu
+      } else if (player2_score > player1_score) {
+        printf("Le joueur 2 remporte la partie !\n");
+        game_over = true; // Fin du jeu
+      } else {            // En cas d'égalité
+        printf("Il y a égalité ! Une manche supplémentaire est nécessaire.\n");
+        num_rounds++; // Ajouter une manche supplémentaire
+      }
+    }
+  }
+
+  printf("Le temps total passé pour l'ensemble de la partie est : Joueur 1 - "
+         "%.2f secondes, Joueur 2 - %.2f secondes\n",
+         player1_total_time, player2_total_time);
+
+  return 0;
+}
