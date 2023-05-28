@@ -7,6 +7,8 @@ Ce readme va servir à présenter toutes les règles de notre jeu:
 
 Il se joue à un ou deux joueurs, sur un plateau de huit cases sur huit. Chaque case est représentée par des couleurs différentes. Les joueurs disposent chacun de huit pions placés sur leurs premières lignes.
 
+**Pour exécuter le jeu à partir du make file, les commandes "make all" puis ".\program" doivent être rentrées dans le terminal.**
+
 ## Le plateau du jeu Colors :
 ![](https://i.imgur.com/ib1aSXy.png[/img])
 
